@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI VR Tour Guide</title>
+  <link rel="stylesheet" href="style.css">
+
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+</head>
+<body>
+  <!-- Top Menu -->
+  <div id="menu">
+    <button class="btn" onclick="changeScene('Colosseum.jpg')">Colosseum</button>
+    <button class="btn" onclick="changeScene('Eiffel_Tower.jpg')">Eiffel Tower</button>
+    <button class="btn" onclick="changeScene('Great_Wall.jpg')">Great Wall</button>
+    <button class="btn" onclick="changeScene('Taj_Mahal.jpg')">Taj Mahal</button>
+    <button id="mic" class="btn" onclick="toggleListening()">🎤 Talk</button>
+    <button class="btn" onclick="askAssistantInput()">💬 Ask (text)</button>
+  </div>
+
+  <!-- Assistant overlay -->
+  <div id="assistantPanel" style="display:none;">
+    <div id="assistantText"></div>
+    <div class="caption">Tip: Say "Take me to Eiffel Tower" or "Tell me about the Colosseum".</div>
+  </div>
+
+  <!-- VR Scene -->
+  <a-scene>
+    <a-sky id="sky" src="assets/Colosseum.jpg" rotation="0 -130 0"></a-sky>
+    <a-entity camera look-controls position="0 1.6 0"></a-entity>
+  </a-scene>
+
+  <script>
+    // -----------------------
+    // VR scene change
+    // -----------------------
+    function changeScene(image) {
+      document.getElementById("sky").setAttribute("src", "assets/" + image);
+      speakText("Now showing " + image.replace(/[_\.]/g," ").replace(/\bjpg\b/i,""));
+    }
+
+    // -----------------------
+    // Speech recognition
+    // -----------------------
+    let recognition = null, listening = false;
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRec();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = e => handleUserText(e.results[0][0].transcript);
+      recognition.onerror = e => { console.error(e); listening = false; updateMicButton(); };
+      recognition.onend = () => { listening = false; updateMicButton(); };
+    }
+
+    function toggleListening() {
+      if (!recognition) { alert("Speech recognition not available"); return; }
+      listening = !listening;
+      listening ? recognition.start() : recognition.stop();
+      updateMicButton();
+    }
+
+    function updateMicButton() {
+      const btn = document.getElementById("mic");
+      if(listening){ btn.textContent="🎙️ Listening..."; btn.style.background="#1db954"; }
+      else{ btn.textContent="🎤 Talk"; btn.style.background="#ff4d4d"; }
+    }
+
+    // -----------------------
+    // AI Assistant
+    // -----------------------
+    async function handleUserText(text) {
+      const lower = text.toLowerCase();
+      const goMatch = lower.match(/(take me to|show me|go to|move to)\s+([a-zA-Z _]+)/i);
+      if(goMatch){
+        const place = goMatch[2].trim();
+        const asset = mapPlaceToAsset(place);
+        if(asset){
+          changeScene(asset);
+          callAssistant("Give a short 2-sentence tour intro for " + place);
+          return;
+        }
+      }
+      callAssistant(text);
+    }
+
+    function mapPlaceToAsset(place){
+      const p = place.toLowerCase();
+      if(p.includes("colosseum") || p.includes("rome")) return "Colosseum.jpg";
+      if(p.includes("eiffel") || p.includes("paris")) return "Eiffel_Tower.jpg";
+      if(p.includes("great wall") || p.includes("china")) return "Great_Wall.jpg";
+      if(p.includes("taj") || p.includes("agra") || p.includes("mahal")) return "Taj_Mahal.jpg";
+      return null;
+    }
+
+    async function callAssistant(userText){
+      showAssistantPanel("Thinking...");
+      try{
+        const resp = await fetch("/api/assistant", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ message: userText })
+        });
+        const data = await resp.json().catch(() => ({ reply: "Server returned invalid response." }));
+        showAssistantPanel(data.reply || "No reply from assistant.");
+        speakText(data.reply || "No reply from assistant.");
+      } catch(err){
+        console.error(err);
+        showAssistantPanel("Assistant error: " + (err.message||err));
+      }
+    }
+
+    function askAssistantInput(){
+      const q = prompt("Ask the tour guide (e.g. 'Tell me about the Taj Mahal')");
+      if(q) handleUserText(q);
+    }
+
+    function showAssistantPanel(text){
+      const panel = document.getElementById("assistantPanel");
+      const t = document.getElementById("assistantText");
+      panel.style.display = "block";
+      t.textContent = text;
+    }
+
+    function speakText(text){
+      if('speechSynthesis' in window){
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate=1; u.pitch=1;
+        const voices = window.speechSynthesis.getVoices();
+        if(voices.length) u.voice = voices.find(v=>v.lang.startsWith('en'))||voices[0];
+        window.speechSynthesis.speak(u);
+      } else { console.warn("No speechSynthesis available."); }
+    }
+
+    window.addEventListener("load", ()=>{
+      showAssistantPanel("Welcome! Say 'Take me to the Eiffel Tower' or ask about any landmark.");
+      speakText("Welcome! Say, take me to the Eiffel Tower, or ask me about any landmark.");
+    });
+  </script>
+</body>
+</html>
