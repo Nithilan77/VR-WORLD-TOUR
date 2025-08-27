@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import cors from "cors";   // <-- add this
 
 dotenv.config();
 
@@ -13,6 +14,11 @@ const PORT = process.env.PORT || 3000;
 // ESM dirname fix
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Enable CORS (allow Vercel frontend to talk to Render backend)
+app.use(cors({
+  origin: "*", // for dev; better: "https://your-frontend.vercel.app"
+}));
 
 // JSON + static files
 app.use(express.json({ limit: "1mb" }));
@@ -30,10 +36,8 @@ app.post("/api/assistant", async (req, res) => {
   }
 
   try {
-    // Gemini expects just text, not role/parts
     const result = await model.generateContent(message);
     const reply = result.response.text();
-
     return res.json({ reply });
   } catch (err) {
     console.error("⚠️ Gemini failed:", err.message);
@@ -44,7 +48,7 @@ app.post("/api/assistant", async (req, res) => {
 });
 // ---------------------------------------------------
 
-// SPA fallback (serve index.html for all other routes)
+// SPA fallback
 app.get(/^(?!\/api).*$/, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
